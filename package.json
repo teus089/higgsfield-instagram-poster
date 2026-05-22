@@ -1,0 +1,17 @@
+{
+  "name": "higgsfield-instagram-poster",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Auto-generate AI media with Higgsfield and post to Instagram Business",
+  "main": "post.mjs",
+  "scripts": {
+    "start": "node post.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "node-fetch": "^3.3.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
