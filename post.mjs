@@ -22,22 +22,29 @@ import { execSync } from 'child_process';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const PROMPTS = require('./prompts.json');
+const PROMPTS  = require('./prompts.json');
+const CAPTIONS = require('./captions.json');
 
-// Pick today's prompt and media type based on days since epoch
-const DAY_INDEX = Math.floor(Date.now() / 86_400_000);
+const IMAGE_HASHTAGS = '#scales10x #AIcontent #contentcreation #digitalmarketing #entrepreneurship #growthmindset #businessowner #marketingstrategy #contentmarketing #socialmediamarketing';
+
+const REEL_HASHTAGS  = '#scales10x #reels #reelsinstagram #viral #viralreels #fyp #foryoupage #trending #explore #AIcontent #contentcreation #digitalmarketing #entrepreneurship #growthmindset #businessowner #contentmarketing #socialmedia #reelsviral #instareels #reelsindia';
+
+// Pick today's prompt, caption, and media type based on days since epoch
+const DAY_INDEX     = Math.floor(Date.now() / 86_400_000);
 const CONTENT_PROMPT = PROMPTS[DAY_INDEX % PROMPTS.length];
-const MEDIA_TYPE = DAY_INDEX % 2 === 0 ? 'image' : 'reel';
-const IMAGE_ASPECT = MEDIA_TYPE === 'reel' ? '9:16' : '3:4';
+const MEDIA_TYPE     = DAY_INDEX % 2 === 0 ? 'image' : 'reel';
+const IMAGE_ASPECT   = MEDIA_TYPE === 'reel' ? '9:16' : '3:4';
+
+const BASE_CAPTION   = CAPTIONS[DAY_INDEX % CAPTIONS.length];
+const POST_CAPTION   = `${BASE_CAPTION}\n\n${MEDIA_TYPE === 'reel' ? REEL_HASHTAGS : IMAGE_HASHTAGS}`;
 
 const {
   IG_USER_ID,      // Instagram Business account numeric ID
   IG_ACCESS_TOKEN, // Long-lived Meta access token (~60 days)
-  POST_CAPTION,
 } = process.env;
 
 function requireEnv() {
-  const missing = ['IG_USER_ID', 'IG_ACCESS_TOKEN', 'POST_CAPTION']
+  const missing = ['IG_USER_ID', 'IG_ACCESS_TOKEN']
     .filter(k => !process.env[k]);
   if (missing.length) {
     throw new Error(`Missing required env vars: ${missing.join(', ')}\nCopy .env.example → .env and fill them in.`);
