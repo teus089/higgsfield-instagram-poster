@@ -25,9 +25,9 @@ const require = createRequire(import.meta.url);
 const PROMPTS  = require('./prompts.json');
 const CAPTIONS = require('./captions.json');
 
-const IMAGE_HASHTAGS = '#scales10x #AIcontent #contentcreation #digitalmarketing #entrepreneurship #growthmindset #businessowner #marketingstrategy #contentmarketing #socialmediamarketing';
+const IMAGE_HASHTAGS = '#scales10x #contentcreation #digitalmarketing #entrepreneurship #growthmindset #businessowner #marketingstrategy #contentmarketing #socialmediamarketing #smallbusiness';
 
-const REEL_HASHTAGS  = '#scales10x #reels #reelsinstagram #viral #viralreels #fyp #foryoupage #trending #explore #AIcontent #contentcreation #digitalmarketing #entrepreneurship #growthmindset #businessowner #contentmarketing #socialmedia #reelsviral #instareels #reelsindia';
+const REEL_HASHTAGS  = '#scales10x #reels #reelsinstagram #viral #viralreels #fyp #foryoupage #trending #explore #contentcreation #digitalmarketing #entrepreneurship #growthmindset #businessowner #contentmarketing #socialmedia #reelsviral #instareels';
 
 // Pick today's prompt, caption, and media type based on days since epoch
 const DAY_INDEX     = Math.floor(Date.now() / 86_400_000);
