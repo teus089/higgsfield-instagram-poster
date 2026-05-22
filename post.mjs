@@ -1,21 +1,13 @@
 // =============================================================================
-// CONFIGURATION — edit these before running
+// CONFIGURATION
 // =============================================================================
-const CONTENT_PROMPT =
-  'A sleek, modern workspace with a glowing laptop screen, soft cinematic lighting, '
-  + 'ultra-realistic, 8K, professional photography aesthetic';
-
-// 'image' → Instagram feed photo (4:5)
-// 'reel'  → Instagram Reel (9:16) — generates image first, then animates it with Seedance
-const MEDIA_TYPE = 'image';
 
 // Image models (higgsfield CLI job_set_type): run `hf model list` to see all
 // Video models : 'soul_cast' | 'seedance_pro' | 'kling_pro'
 const IMAGE_MODEL = 'text2image_soul_v2';
-const VIDEO_MODEL = 'seedance_pro';
+const VIDEO_MODEL = 'seedance1_5';
 
 // Aspect ratios — Soul V2 supports: 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3
-const IMAGE_ASPECT = MEDIA_TYPE === 'reel' ? '9:16' : '3:4';
 const VIDEO_ASPECT = '9:16';
 
 // Safety: small delay between Meta API calls (ms)
@@ -27,6 +19,16 @@ const META_DELAY_MS = 1_000;
 import 'dotenv/config';
 import fetch from 'node-fetch';
 import { execSync } from 'child_process';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const PROMPTS = require('./prompts.json');
+
+// Pick today's prompt and media type based on days since epoch
+const DAY_INDEX = Math.floor(Date.now() / 86_400_000);
+const CONTENT_PROMPT = PROMPTS[DAY_INDEX % PROMPTS.length];
+const MEDIA_TYPE = DAY_INDEX % 2 === 0 ? 'image' : 'reel';
+const IMAGE_ASPECT = MEDIA_TYPE === 'reel' ? '9:16' : '3:4';
 
 const {
   IG_USER_ID,      // Instagram Business account numeric ID
@@ -50,22 +52,32 @@ function hfCli(args) {
   return execSync(`higgsfield ${args} --json --no-color`, { encoding: 'utf8' }).trim();
 }
 
+// Returns { jobId, url }
 function generateImage(model, prompt, aspectRatio) {
-  console.log(`  → higgsfield generate create ${model} --wait`);
-  const out = hfCli(`generate create ${model} --prompt ${JSON.stringify(prompt)} --aspect_ratio ${aspectRatio} --wait --wait-timeout 5m`);
-  const data = JSON.parse(out);
-  const url = data.result_url || data[0]?.result_url;
-  if (!url) throw new Error(`No result_url in CLI output: ${out}`);
+  console.log(`  → higgsfield generate create ${model}`);
+  const submitOut = hfCli(`generate create ${model} --prompt ${JSON.stringify(prompt)} --aspect_ratio ${aspectRatio}`);
+  const jobId = JSON.parse(submitOut)[0];
+  if (!jobId) throw new Error(`No job ID in CLI output: ${submitOut}`);
+  console.log(`  ⏳ Job ${jobId} — waiting…`);
+  const waitOut = hfCli(`generate wait ${jobId} --timeout 5m`);
+  const data = JSON.parse(waitOut);
+  const url = data.result_url;
+  if (!url) throw new Error(`No result_url in CLI output: ${waitOut}`);
   console.log(`  ✓ Image ready: ${url}`);
-  return url;
+  return { jobId, url };
 }
 
-function generateVideo(model, prompt, aspectRatio, sourceImageUrl) {
-  console.log(`  → higgsfield generate create ${model} --wait`);
-  const out = hfCli(`generate create ${model} --prompt ${JSON.stringify(prompt)} --aspect_ratio ${aspectRatio} --image ${sourceImageUrl} --wait --wait-timeout 10m`);
-  const data = JSON.parse(out);
-  const url = data.result_url || data[0]?.result_url;
-  if (!url) throw new Error(`No result_url in CLI output: ${out}`);
+// sourceJobId must be the UUID from a prior generateImage call
+function generateVideo(model, prompt, aspectRatio, sourceJobId) {
+  console.log(`  → higgsfield generate create ${model}`);
+  const submitOut = hfCli(`generate create ${model} --prompt ${JSON.stringify(prompt)} --aspect_ratio ${aspectRatio} --image ${sourceJobId}`);
+  const jobId = JSON.parse(submitOut)[0];
+  if (!jobId) throw new Error(`No job ID in CLI output: ${submitOut}`);
+  console.log(`  ⏳ Job ${jobId} — waiting…`);
+  const waitOut = hfCli(`generate wait ${jobId} --timeout 10m`);
+  const data = JSON.parse(waitOut);
+  const url = data.result_url;
+  if (!url) throw new Error(`No result_url in CLI output: ${waitOut}`);
   console.log(`  ✓ Video ready: ${url}`);
   return url;
 }
@@ -128,7 +140,7 @@ async function waitForVideoContainer(containerId) {
 
   while (Date.now() < deadline) {
     attempt++;
-    await sleep(POLL_INTERVAL_MS);
+    await sleep(5_000);
 
     const res = await fetch(
       `${IG_BASE}/${containerId}?fields=status_code,status&access_token=${IG_ACCESS_TOKEN}`
@@ -212,14 +224,14 @@ async function main() {
   let mediaUrl;
 
   if (MEDIA_TYPE === 'image') {
-    mediaUrl = generateImage(IMAGE_MODEL, CONTENT_PROMPT, IMAGE_ASPECT);
+    mediaUrl = generateImage(IMAGE_MODEL, CONTENT_PROMPT, IMAGE_ASPECT).url;
 
   } else if (MEDIA_TYPE === 'reel') {
     console.log('  [1a] Generating source image for Reel…');
-    const sourceImageUrl = generateImage(IMAGE_MODEL, CONTENT_PROMPT, IMAGE_ASPECT);
+    const { jobId } = generateImage(IMAGE_MODEL, CONTENT_PROMPT, IMAGE_ASPECT);
 
     console.log(`\n  [1b] Animating image into video with ${VIDEO_MODEL}…`);
-    mediaUrl = generateVideo(VIDEO_MODEL, CONTENT_PROMPT, VIDEO_ASPECT, sourceImageUrl);
+    mediaUrl = generateVideo(VIDEO_MODEL, CONTENT_PROMPT, VIDEO_ASPECT, jobId);
 
   } else {
     throw new Error(`Unknown MEDIA_TYPE: "${MEDIA_TYPE}". Must be 'image' or 'reel'.`);
