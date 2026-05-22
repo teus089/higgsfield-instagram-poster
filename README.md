@@ -1,15 +1,37 @@
 # Higgsfield → Instagram Auto-Poster
 
-Generates AI images or Reels with the Higgsfield API, then publishes them to your Instagram Business page via the official Meta Graph API. No browser automation — all official APIs.
+Generates AI images or Reels with the **Higgsfield CLI** and publishes them to an Instagram Business account via the **Meta Graph API v25.0**. No browser automation — all official APIs and CLIs.
+
+---
+
+## How It Works
+
+```
+node post.mjs
+      │
+      ├─ Step 1: Higgsfield CLI generates the image
+      │    higgsfield generate create text2image_soul_v2 --prompt "..." --wait
+      │    → returns a public CDN URL (cloudfront.net)
+      │
+      ├─ Step 2: Meta Graph API creates a media container
+      │    POST /v25.0/{IG_USER_ID}/media
+      │    → returns a container ID
+      │
+      └─ Step 3: Meta Graph API publishes the container
+           POST /v25.0/{IG_USER_ID}/media_publish
+           → post is live on Instagram
+```
+
+For **Reels**, Step 1 runs twice: first generates a source image (Soul V2), then animates it into a video (Seedance/Kling image-to-video). Meta then processes the video server-side before publishing.
 
 ---
 
 ## Prerequisites
 
-- **Node.js 18+** (`node --version`)
-- **Higgsfield account** with API credits — [platform.higgsfield.ai](https://platform.higgsfield.ai)
-- **Meta Developer App** with an Instagram Business account connected
-- Required Meta app permissions: `instagram_basic`, `instagram_content_publish`, `pages_read_engagement`
+- **Node.js 18+**
+- **Higgsfield account** with credits — [higgsfield.ai](https://higgsfield.ai)
+- **Instagram Business account** connected to a Facebook Page
+- **Meta Developer App** (Business type) with **Facebook Login for Business** configured
 
 ---
 
@@ -18,111 +40,111 @@ Generates AI images or Reels with the Higgsfield API, then publishes them to you
 ### 1. Install dependencies
 
 ```bash
-cd higgsfield-instagram-poster
 npm install
+npm install -g @higgsfield/cli
 ```
 
-### 2. Create your `.env` file
+### 2. Authenticate with Higgsfield
+
+```bash
+higgsfield auth login
+```
+
+This opens a browser tab for one-click device login. On success it saves credentials to `~/.config/higgsfield/credentials.json`. The CLI uses these automatically on every run — no API key needed in `.env`.
+
+**Refresh when expired:** just run `higgsfield auth login` again (~10 seconds).
+
+### 3. Set up your `.env`
 
 ```bash
 cp .env.example .env
 ```
 
-Then fill in all four values. See the sections below for how to get each one.
+Fill in three values:
 
----
+```
+IG_USER_ID=          # Your Instagram Business account numeric ID
+IG_ACCESS_TOKEN=     # Long-lived Meta User Access Token (~60 days)
+POST_CAPTION=        # Caption text and hashtags for every post
+```
 
-### 3. Get your Higgsfield API Key
+#### Getting `IG_USER_ID`
 
-1. Log in at [platform.higgsfield.ai](https://platform.higgsfield.ai)
-2. Go to **Settings → API Keys → Create Key**
-3. You'll receive a `KEY_ID:KEY_SECRET` pair — paste the entire string as `HIGGSFIELD_API_KEY`
+Your Instagram Business account's numeric ID. Find it via the Graph API Explorer:
 
----
+```
+GET /me/accounts              → get your Facebook Page ID
+GET /{page_id}?fields=instagram_business_account  → get the IG account ID
+```
 
-### 4. Get a long-lived Instagram access token
+#### Getting `IG_ACCESS_TOKEN`
 
-#### a. Create a Meta Developer App
+You need a **User Access Token** with these permissions:
+- `instagram_content_publish`
+- `instagram_basic`
+- `pages_read_engagement`
+- `pages_show_list`
 
-1. Go to [developers.facebook.com](https://developers.facebook.com) → **My Apps → Create App**
-2. Choose **Business** type
-3. Add the **Instagram Graph API** product
-4. Under **App Settings → Basic**, note your **App ID** and **App Secret**
+**How to get it:**
 
-#### b. Generate a short-lived token
+1. In [developers.facebook.com](https://developers.facebook.com), create a **Business** app
+2. Add the **Instagram API** use case → **API setup with Facebook login**
+3. Click **Add required content permissions**
+4. In **Facebook Login for Business → Settings**, add `http://localhost:8080` as a Valid OAuth Redirect URI
+5. Run the capture server: `node capture-token.mjs`
+6. Open this URL in your browser (swap in your App ID):
+   ```
+   https://www.facebook.com/dialog/oauth
+     ?client_id=YOUR_APP_ID
+     &redirect_uri=http://localhost:8080
+     &scope=instagram_content_publish,instagram_basic,pages_read_engagement,pages_show_list,business_management
+     &response_type=token
+   ```
+7. Complete the Facebook login flow — select your Page, Business, and Instagram account
+8. The capture server writes the token to `.token` and exits
+9. The response includes a `long_lived_token` valid for ~60 days — use that as `IG_ACCESS_TOKEN`
 
-1. Open the [Meta Graph API Explorer](https://developers.facebook.com/tools/explorer/)
-2. Select your app from the dropdown
-3. Click **Add a Permission** and add:
-   - `instagram_basic`
-   - `instagram_content_publish`
-   - `pages_read_engagement`
-4. Click **Generate Access Token** → authorize with your Facebook account
-5. Copy the token (valid for ~1 hour)
-
-#### c. Exchange for a long-lived token (~60 days)
+**Refresh every ~50 days:**
 
 ```bash
-curl "https://graph.facebook.com/v25.0/oauth/access_token\
-?grant_type=fb_exchange_token\
-&client_id=YOUR_APP_ID\
-&client_secret=YOUR_APP_SECRET\
-&fb_exchange_token=YOUR_SHORT_LIVED_TOKEN"
+curl "https://graph.facebook.com/v25.0/oauth/access_token
+  ?grant_type=fb_exchange_token
+  &client_id=YOUR_APP_ID
+  &client_secret=YOUR_APP_SECRET
+  &fb_exchange_token=YOUR_CURRENT_TOKEN"
 ```
-
-Copy the returned `access_token` → paste into `.env` as `IG_ACCESS_TOKEN`.
-
-#### d. Refresh before expiry (every ~50 days)
-
-Run the same `fb_exchange_token` exchange with your current long-lived token. Meta resets the 60-day clock each time.
-
----
-
-### 5. Find your Instagram Business Account ID (`IG_USER_ID`)
-
-Run this in Graph API Explorer (or curl) with your access token:
-
-```
-GET /me/accounts
-```
-
-Find your Facebook Page in the response, copy its `id`, then run:
-
-```
-GET /{page_id}?fields=instagram_business_account
-```
-
-Copy `instagram_business_account.id` → paste into `.env` as `IG_USER_ID`.
 
 ---
 
 ## Configuration
 
-Open `post.mjs` and edit the **CONFIGURATION** block at the top:
+Edit the **CONFIGURATION** block at the top of `post.mjs`:
 
 ```js
 const CONTENT_PROMPT = 'Your image/video description here';
 
-const MEDIA_TYPE = 'image';  // 'image' (feed, 4:5) or 'reel' (9:16)
+// 'image' → Instagram feed photo (3:4)
+// 'reel'  → Instagram Reel (9:16)
+const MEDIA_TYPE = 'image';
 
-const IMAGE_MODEL = 'higgsfield-ai/soul/standard';
-// Alternatives: 'higgsfield-ai/soul/v2/text-to-image'
-
-const VIDEO_MODEL = 'bytedance/seedance/v1/pro/image-to-video';
-// Alternative : 'kling-video/v2.1/pro/image-to-video'
+// Run `higgsfield model list` to see all available models
+const IMAGE_MODEL = 'text2image_soul_v2';
+const VIDEO_MODEL = 'seedance_pro';
 ```
 
-The `POST_CAPTION` (with your hashtags) lives in `.env` so you can change it without touching code.
+**Supported aspect ratios for Soul V2:** `1:1`, `16:9`, `9:16`, `4:3`, `3:4`, `3:2`, `2:3`
+
+The `POST_CAPTION` lives in `.env` so you can update hashtags without touching code.
 
 ---
 
-## How to Run
+## Running
 
 ```bash
 node post.mjs
 ```
 
-Expected output:
+Example output:
 
 ```
 ========================================
@@ -131,68 +153,59 @@ Expected output:
 
 [Step 1] Generating image with Higgsfield…
   Prompt : "A sleek, modern workspace…"
-  Model  : higgsfield-ai/soul/standard
-  Aspect : 4:5
+  Model  : text2image_soul_v2
+  Aspect : 3:4
 
-  → POST https://platform.higgsfield.ai/higgsfield-ai/soul/standard
-  ✓ Job submitted — request_id: req_abc123
-  ⏳ Attempt 1: status = queued
-  ⏳ Attempt 2: status = in_progress
-  ✓ Media ready: https://cdn.higgsfield.ai/...
+  → higgsfield generate create text2image_soul_v2 --wait
+  ✓ Image ready: https://d8j0ntlcm91z4.cloudfront.net/...
 
 [Step 2] Creating Instagram media container…
-  → POST https://graph.facebook.com/v25.0/1234567890/media
-  ✓ Container created — id: 17891234567890
+  → POST https://graph.facebook.com/v25.0/{IG_USER_ID}/media
+  ✓ Container created — id: 17877...
 
 [Step 3] Publishing to Instagram…
-  → POST https://graph.facebook.com/v25.0/1234567890/media_publish
+  → POST https://graph.facebook.com/v25.0/{IG_USER_ID}/media_publish
 
 ========================================
  SUCCESS! Posted to Instagram
- Media ID : 17891234567890
- View     : https://www.instagram.com/p/17891234567890/
+ Media ID : 17989...
 ========================================
 ```
 
 ---
 
-## Scheduling with cron (Linux / macOS)
+## Scheduling
 
-Post once a day at 9 AM:
+**Windows Task Scheduler:**
 
-```bash
-crontab -e
+```powershell
+schtasks /create /tn "IG Auto-Post" /tr "node C:\path\to\higgsfield-instagram-poster\post.mjs" /sc daily /st 09:00
 ```
 
-Add:
+**Linux / macOS cron** (once a day at 9 AM):
 
 ```
 0 9 * * * cd /path/to/higgsfield-instagram-poster && node post.mjs >> logs/post.log 2>&1
 ```
 
-### On Windows with Task Scheduler
+---
 
-```powershell
-schtasks /create /tn "IG Auto-Post" /tr "node C:\Users\matsi\higgsfield-instagram-poster\post.mjs" /sc daily /st 09:00
-```
+## Limits
+
+| Item | Value |
+|---|---|
+| Instagram posts per 24h | 50 |
+| Meta access token lifespan | ~60 days |
+| Higgsfield CLI generation timeout | 5 min (images), 10 min (videos) |
+| Reel video processing on Meta's side | Up to 5 minutes |
 
 ---
 
-## Important Limits & Notes
+## Files
 
-| Limit | Value |
+| File | Purpose |
 |---|---|
-| Instagram published posts | 50 per 24-hour rolling window |
-| Meta access token lifespan | ~60 days (refresh every 50 days) |
-| Higgsfield poll timeout | 120 seconds per generation job |
-| Reels video container processing | Up to 5 minutes on Meta's side |
-
-### Is the Higgsfield CDN URL publicly accessible?
-
-Yes — Higgsfield's `cdn.higgsfield.ai` URLs are publicly accessible without auth. Meta's servers can fetch them directly. You do **not** need to re-host or proxy the media file.
-
-If you run into a Meta error like `OAuthException: Invalid image/video URL`, try downloading the file locally and re-hosting it on S3 or Cloudinary first, then pass that URL to the Graph API instead.
-
-### For Reels
-
-The script generates an image first (Soul model), then animates it into a video (Seedance/Kling). This two-step flow is required because the Soul model is text-to-image only. If you have a direct text-to-video endpoint from Higgsfield, update the `reel` branch in `main()` accordingly.
+| `post.mjs` | Main script — generate + publish |
+| `capture-token.mjs` | One-time helper: local OAuth server that captures the Meta access token from the browser redirect |
+| `.env.example` | Template for required environment variables |
+| `.env` | Your credentials (gitignored) |
